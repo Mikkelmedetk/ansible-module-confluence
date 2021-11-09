@@ -86,19 +86,23 @@ def create_confluence_instance(url, username, password):
 def _page_exists(space_key, title):
     return confluence_module.page_exists(space=space_key, title=title)
 
-def _handle_present(module, space_key, title, body):
+def _handle_present(module, space_key, title, body, parent_id=None):
     space_has_page = _page_exists(space_key, title)
     confluence_response = None
 
-
+    # If page with title already return the page instead of creating it
+    # User should use update state instead if they would like that functionality.
     if space_has_page:
         content = confluence_module.get_page_by_title(space_key, title)
-        module.exit_json(changed=False, results=content)
+        module.exit_json(changed=False, msg='Page not created since it already exists', results=content)
     
-    confluence_response = confluence_module.create_page(space=space_key, title=title, body=body, type="page", representation="wiki")
+    confluence_response = confluence_module.create_page(space=space_key, title=title, body=body, type="page", representation="wiki", parent_id=parent_id)
 
     if confluence_response is not None:
-        module.exit_json(changed=True, results=confluence_response)
+        module.exit_json(changed=True, msg='Page created', results=confluence_response)
+
+def _handle_absent(module, space_key, title, page_id):
+    pass
 
 def run_module():
     # define available arguments/parameters a user can pass to the module
@@ -109,7 +113,9 @@ def run_module():
         state=dict(type='str', required=True, choices=('present', 'absent', 'update')),
         space_key=dict(type='str', required=True),
         title=dict(type='str', required=True),
-        body=dict(type='str')
+        body=dict(type='str'),
+        parent_id=dict(type='int'),
+        page_id=dict(type='int')
     )
 
     # seed the result dict in the object
@@ -128,21 +134,28 @@ def run_module():
     # supports check mode
     module = AnsibleModule(
         argument_spec=module_args,
-        supports_check_mode=True
+        supports_check_mode=False
     )
     
-    url = module.params['url']
-    username = module.params['username']
-    password = module.params['password']
-    state = module.params['state']
-    space_key = module.params['space_key']
-    title = module.params['title']
-    body = module.params['body']
+    params = module.params
 
+    url = params['url']
+    username = params['username']
+    password = params['password']
+    state = params['state']
+    space_key = params['space_key']
+    title = params['title']
+    body = params['body']
+    parent_id = params['parent_id']
+    page_id = params['page_id']
+
+    
     create_confluence_instance(url, username, password)
     
     if state in ['present']:
-        _handle_present(module, space_key, title, body)
+        _handle_present(module, space_key, title, body, parent_id)
+    elif state in ['absent']:
+        _handle_absent(module, space_key, title, page_id)
 
     # if the user is working with this module in only check mode we do not
     # want to make any changes to the environment, just return the current
