@@ -72,8 +72,13 @@ message:
 from ansible.module_utils.basic import AnsibleModule
 from ansible.utils.display import Display
 from atlassian import Confluence, confluence
+import logging
 
 display = Display()
+
+# Atlassian rest module is using logging module and writes out to stdout. According to developer guidelines for Ansible Modules this shouldn't be done
+log = logging.getLogger(__name__)
+logging.disable()
 
 def create_confluence_instance(url, username, password):
     global confluence_module
@@ -84,7 +89,25 @@ def create_confluence_instance(url, username, password):
         confluence_module = Confluence(url=url, username=username, password=password, cloud=False)
 
 def _page_exists(space_key, title):
-    return confluence_module.page_exists(space=space_key, title=title)
+    is_page_existing = False
+    try:
+        is_page_existing = confluence_module.page_exists(space=space_key, title=title)
+    except:
+        pass
+
+    return is_page_existing
+
+def _get_page_id(space, title):
+    page_id = None
+
+    try: 
+        page = confluence_module.get_page_by_title(space, title)
+        page_id = page['id']
+    except:
+        pass
+
+    return page_id
+
 
 def _handle_present(module, space_key, title, body, parent_id=None):
     space_has_page = _page_exists(space_key, title)
@@ -101,8 +124,22 @@ def _handle_present(module, space_key, title, body, parent_id=None):
     if confluence_response is not None:
         module.exit_json(changed=True, msg='Page created', results=confluence_response)
 
-def _handle_absent(module, space_key, title, page_id):
-    pass
+def _handle_absent(module, space_key, title, page_id, recursive=False):
+    space_has_page = _page_exists(space_key, title)
+    
+    # If page with title already return the page instead of creating it
+    # User should use update state instead if they would like that functionality.
+    if not space_has_page:
+        module.exit_json(changed=False, msg='Page does not exist, no action was taken.')
+
+    page_id = _get_page_id(space_key, title)
+
+    try:
+        confluence_module.remove_page(page_id, recursive)
+    except Exception as e:
+        module.exit_json(changed=False, msg='Something went wrong deleting content', exception=str(e))
+
+    module.exit_json(changed=True, msg='Page deleted')
 
 def run_module():
     # define available arguments/parameters a user can pass to the module
@@ -115,7 +152,9 @@ def run_module():
         title=dict(type='str', required=True),
         body=dict(type='str'),
         parent_id=dict(type='int'),
-        page_id=dict(type='int')
+        page_id=dict(type='int'),
+        recursive=dict(type='str'),
+        force=dict(type='boolean', default=False)
     )
 
     # seed the result dict in the object
@@ -148,6 +187,7 @@ def run_module():
     body = params['body']
     parent_id = params['parent_id']
     page_id = params['page_id']
+    recursive = params['recursive']
 
     
     create_confluence_instance(url, username, password)
@@ -155,34 +195,7 @@ def run_module():
     if state in ['present']:
         _handle_present(module, space_key, title, body, parent_id)
     elif state in ['absent']:
-        _handle_absent(module, space_key, title, page_id)
-
-    # if the user is working with this module in only check mode we do not
-    # want to make any changes to the environment, just return the current
-    # state with no modifications
-    # if module.check_mode:
-    #     module.exit_json(**result)
-
-    # manipulate or modify the state as needed (this is going to be the
-    # part where your module will do what it needs to do)
-    # result['original_message'] = module.params['name']
-    # result['message'] = 'goodbye'
-
-    # use whatever logic you need to determine whether or not this module
-    # made any modifications to your target
-    # if module.params['new']:
-    #     result['changed'] = True
-
-    # during the execution of the module, if there is an exception or a
-    # conditional state that effectively causes a failure, run
-    # AnsibleModule.fail_json() to pass in the message and the result
-    # if module.params['name'] == 'fail me':
-    #     module.fail_json(msg='You requested this to fail', **result)
-
-    # in the event of a successful module execution, you will want to
-    # simple AnsibleModule.exit_json(), passing the key/value results
-    # module.exit_json(**result)
-
+        _handle_absent(module, space_key, title, page_id, recursive)
 
 def main():
     run_module()
