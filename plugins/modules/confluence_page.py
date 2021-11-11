@@ -109,20 +109,26 @@ def _get_page_id(space, title):
     return page_id
 
 
-def _handle_present(module, space_key, title, body, parent_id=None):
+def _handle_present(module, space_key, title, body, force, parent_id=None):
     space_has_page = _page_exists(space_key, title)
     confluence_response = None
 
     # If page with title already return the page instead of creating it
     # User should use update state instead if they would like that functionality.
-    if space_has_page:
+    if space_has_page == True and not force:
         content = confluence_module.get_page_by_title(space_key, title)
         module.exit_json(changed=False, msg='Page not created since it already exists', results=content)
     
-    confluence_response = confluence_module.create_page(space=space_key, title=title, body=body, type="page", representation="wiki", parent_id=parent_id)
+
+    if force:
+        confluence_response = confluence_module.update_or_create(space=space_key, title=title, body=body, type="page", representation="wiki", parent_id=parent_id)
+    else:
+        confluence_response = confluence_module.create_page(space=space_key, title=title, body=body, type="page", representation="wiki", parent_id=parent_id)
 
     if confluence_response is not None:
         module.exit_json(changed=True, msg='Page created', results=confluence_response)
+    else:
+        module.fail_json(changed=False, msg='Something went wrong creating or updating the page')
 
 def _handle_absent(module, space_key, title, page_id, recursive=False):
     space_has_page = _page_exists(space_key, title)
@@ -154,7 +160,7 @@ def run_module():
         parent_id=dict(type='int'),
         page_id=dict(type='int'),
         recursive=dict(type='str'),
-        force=dict(type='boolean', default=False)
+        force=dict(type='bool', default=True)
     )
 
     # seed the result dict in the object
@@ -188,12 +194,13 @@ def run_module():
     parent_id = params['parent_id']
     page_id = params['page_id']
     recursive = params['recursive']
+    force = params['force']
 
     
     create_confluence_instance(url, username, password)
     
     if state in ['present']:
-        _handle_present(module, space_key, title, body, parent_id)
+        _handle_present(module, space_key, title, body, force, parent_id)
     elif state in ['absent']:
         _handle_absent(module, space_key, title, page_id, recursive)
 
