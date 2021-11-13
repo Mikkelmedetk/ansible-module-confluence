@@ -136,7 +136,7 @@ def _handle_absent(module, space_key, title, page_id, recursive=False):
     # If page with title already return the page instead of creating it
     # User should use update state instead if they would like that functionality.
     if not space_has_page:
-        module.exit_json(changed=False, msg='Page does not exist, no action was taken.')
+        module.exit_json(changed=False, msg='Page does not exist, no action was taken. ')
 
     page_id = _get_page_id(space_key, title)
 
