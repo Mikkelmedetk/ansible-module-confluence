@@ -1,3 +1,6 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
 # Copyright: (c) 2018, Terry Jones <terry.jones@example.org>
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 from __future__ import (absolute_import, division, print_function)
@@ -11,59 +14,86 @@ __metaclass__ = type
 
 DOCUMENTATION = r'''
 ---
-module: my_test
-short_description: This is my test module
-# If this is part of a collection, you need to use semantic versioning,
-# i.e. the version is of the form "2.5.0" and not "2.4".
-version_added: "1.0.0"
-description: This is my longer description explaining my test module.
+module: confluence_page
+short_description: Thin wrapper for atlassian python api as a module
+version_added: "0.0.1"
+description: This module is a small ansible wrapper for Atlassian python api, to make it easier to work with confluence
 options:
-    name:
-        description: This is the message to send to the test module.
+    space_key:
+        description: Space in confluence to interact with
         required: true
         type: str
-    new:
-        description:
-            - Control to demo if the result of this module is changed or not.
-            - Parameter description can be a list as well.
+    title:
+        description: Title of page
+        required: true
+    body:
+        description: Content of confluence page
         required: false
-        type: bool
+        type: str
+    labels:
+        description: Labels to add to a wiki page
+        required: false
+        type: dict
+    overwrite:
+        description: Flag to overwrite page if it already exists
+        required: false
+        type: dict
+    state: 
+        description: Action to make
+        required: true
+        choices: ["present", "absent", "add_labels", "remove_labels", "append_page", "prepend_page", "cql"]
+        type: str
+    update_title_to:
+        description: If the title of a page needs to be updated, this will hold the new title of the page
+        required: false
+        type: str
+author:
+    - Mikkel Doktor (@mikkelmedetk)
 # Specify this value according to your collection
 # in format of namespace.collection.doc_fragment_name
-extends_documentation_fragment:
-    - my_namespace.my_collection.my_doc_fragment_name
-author:
-    - Your Name (@yourGitHubHandle)
+#extends_documentation_fragment:
+#    - my_namespace.my_collection.my_doc_fragment_name
 '''
 
 EXAMPLES = r'''
-# Pass in a message
-- name: Test with a message
-  my_namespace.my_collection.my_test:
-    name: hello world
-# pass in a message and have changed true
-- name: Test with a message and changed output
-  my_namespace.my_collection.my_test:
-    name: hello world
-    new: true
-# fail the module
-- name: Test failure of the module
-  my_namespace.my_collection.my_test:
-    name: fail me
+# Create a page
+- name: Create a page
+  mdoktor.confluence.confluence_page:
+    space_key: XXX
+    title: My first confluence page from ansible
+    body: My first content
+    state: present
+- name: Create a page with labels
+  mdoktor.confluence.confluence_page:
+    space_key: XXX
+    title: My first confluence page from ansible
+    body: My first content
+    state: present
+    labels:
+        - foo
+        - bar
+- name: Add labels
+  mdoktor.confluence.confluence_page:
+    space_key: XXX
+    title: My first confluence page from ansible
+    state: add_labels
+    labels:
+        - foo
+        - bar
 '''
 
 RETURN = r'''
 # These are examples of possible return values, and in general should use other names for return values.
-original_message:
-    description: The original name param that was passed in.
+msg:
+    description: Friendly message of what happend
     type: str
     returned: always
-    sample: 'hello world'
-message:
-    description: The output message that the test module generates.
-    type: str
-    returned: always
-    sample: 'goodbye'
+    sample: 'Page have been added'
+response:
+    description: This will receive the actual response body from 
+    type: json
+    returned: When it makes sense
+    sample: 'jsonresponse'
 '''
 
 
@@ -141,9 +171,13 @@ def _handle_present(module, space_key, title, body, overwrite, labels, parent_pa
 
         page_id = _get_page_id(module, space_key, title)
 
+        # User of module doesn't want to update the title if update_title_to is not set
+        if not update_title_to:
+            update_title_to = title
+
         try:
             confluence_response = confluence_module.update_page(
-                page_id, title, body, parent_id, type="page", representation="wiki")
+                page_id, update_title_to, body, parent_id, type="page", representation="wiki")
         except ApiPermissionError:
             module.fail_json(msg='Please check if your user have the appropiate permissions', exception='{e}')
 
@@ -457,7 +491,10 @@ def run_module():
 
     module = AnsibleModule(
         argument_spec=module_args,
-        supports_check_mode=False
+        supports_check_mode=False,
+        required_if=[
+            ('state', 'present', ('space_key', 'title'))
+        ]
     )
 
     params = module.params
